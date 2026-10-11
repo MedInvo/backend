@@ -10,11 +10,24 @@ on:
       - "test/**"
       - "bugfix/**"
       - "release/**"
+    paths:
+      - "product-service/**"
+      - "order-service/**"
+      - ".github/workflows/backend-ci.yml"
+      - "sonar-project.properties"
+      - "requirements*.txt"
 
   pull_request:
     branches:
       - main
       - develop
+      - "release/**"
+    paths:
+      - "product-service/**"
+      - "order-service/**"
+      - ".github/workflows/backend-ci.yml"
+      - "sonar-project.properties"
+      - "requirements*.txt"
 
   workflow_dispatch:
     inputs:
