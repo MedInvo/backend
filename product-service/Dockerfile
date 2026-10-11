@@ -1,3 +1,4 @@
+# This Dockerfile is used to build a Docker image for the order-service backend application.
 FROM python:3.12-slim
 
 WORKDIR /app
