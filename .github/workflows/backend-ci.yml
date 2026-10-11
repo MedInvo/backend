@@ -1,0 +1,221 @@
+
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "test/**"
+      - "bugfix/**"
+      - "release/**"
+
+  pull_request:
+    branches:
+      - main
+      - develop
+
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch to build and publish"
+        required: true
+        default: develop
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test Backend Services
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pharma_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pharma_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            product-service/requirements.txt
+            order-service/requirements.txt
+
+      - name: Test Product Service
+        working-directory: product-service
+        env:
+          DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/pharma_test
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pytest-cov pip-audit
+
+          python -m pip check
+
+          python -m pytest \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            -v
+
+          python -m pip_audit -r requirements.txt
+
+      - name: Test Order Service
+        working-directory: order-service
+        env:
+          DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/pharma_test
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pytest-cov pip-audit
+
+          python -m pip check
+
+          python -m pytest \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            -v
+
+          python -m pip_audit -r requirements.txt
+
+      - name: SonarCloud Analysis
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.sources=product-service/app,order-service/app
+            -Dsonar.tests=product-service/tests,order-service/tests
+            -Dsonar.python.coverage.reportPaths=product-service/coverage.xml,order-service/coverage.xml
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+  build-scan-push:
+    name: Build, Scan and Push to ECR
+    runs-on: ubuntu-latest
+    needs: test
+
+    # Publish development images on develop pushes or manual runs.
+    # Pull requests and feature-branch pushes never publish images.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/develop')
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Determine source commit
+        id: source
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build Product Service image
+        env:
+          IMAGE_TAG: ${{ steps.source.outputs.sha }}
+        run: |
+          docker build \
+            -t "product-service:$IMAGE_TAG" \
+            ./product-service
+
+      - name: Build Order Service image
+        env:
+          IMAGE_TAG: ${{ steps.source.outputs.sha }}
+        run: |
+          docker build \
+            -t "order-service:$IMAGE_TAG" \
+            ./order-service
+
+      - name: Trivy scan Product Service
+        uses: aquasecurity/trivy-action@0.33.0
+        with:
+          image-ref: product-service:${{ steps.source.outputs.sha }}
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Trivy scan Order Service
+        uses: aquasecurity/trivy-action@0.33.0
+        with:
+          image-ref: order-service:${{ steps.source.outputs.sha }}
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify AWS identity
+        id: aws
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity \
+            --query Account --output text)
+
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          aws sts get-caller-identity
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push Product Service image
+        env:
+          ACCOUNT_ID: ${{ steps.aws.outputs.account_id }}
+          IMAGE_TAG: ${{ steps.source.outputs.sha }}
+        run: |
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+          IMAGE="$REGISTRY/pharma-medinvo-dev-product-service"
+
+          docker tag "product-service:$IMAGE_TAG" "$IMAGE:$IMAGE_TAG"
+          docker push "$IMAGE:$IMAGE_TAG"
+
+      - name: Push Order Service image
+        env:
+          ACCOUNT_ID: ${{ steps.aws.outputs.account_id }}
+          IMAGE_TAG: ${{ steps.source.outputs.sha }}
+        run: |
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+          IMAGE="$REGISTRY/pharma-medinvo-dev-order-service"
+
+          docker tag "order-service:$IMAGE_TAG" "$IMAGE:$IMAGE_TAG"
+          docker push "$IMAGE:$IMAGE_TAG"
+
