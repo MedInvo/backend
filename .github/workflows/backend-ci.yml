@@ -279,6 +279,9 @@ jobs:
       contents: read
       id-token: write
 
+    outputs:
+      image_tag: ${{ steps.source.outputs.image_tag }}
+
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
 
@@ -291,7 +294,9 @@ jobs:
       - name: Determine image tag
         id: source
         run: |
-          echo "sha=sha-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+          TAG="sha-$(git rev-parse --short=7 HEAD)"
+          echo "sha=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build Product Service image
         env:
