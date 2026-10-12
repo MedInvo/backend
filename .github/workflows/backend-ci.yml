@@ -292,7 +292,7 @@ jobs:
       - name: Determine image tag
         id: source
         run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "sha=sha-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build Product Service image
         env:
