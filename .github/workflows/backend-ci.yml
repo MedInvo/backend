@@ -1,4 +1,3 @@
-
 name: Backend CI
 
 on:
@@ -280,6 +279,9 @@ jobs:
       contents: read
       id-token: write
 
+    outputs:
+      image_tag: ${{ steps.source.outputs.image_tag }}
+
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
 
@@ -292,7 +294,9 @@ jobs:
       - name: Determine image tag
         id: source
         run: |
-          echo "sha=sha-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+          TAG="sha-$(git rev-parse --short=7 HEAD)"
+          echo "sha=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build Product Service image
         env:
@@ -374,3 +378,75 @@ jobs:
 
           docker tag "order-service:$IMAGE_TAG" "$IMAGE:$IMAGE_TAG"
           docker push "$IMAGE:$IMAGE_TAG"
+    # --------------------------------------------------
+  # JOB 6: UPDATE GITOPS — DEV
+  # --------------------------------------------------
+  deploy-dev:
+    name: Update GitOps — DEV
+    if: github.ref == 'refs/heads/develop'
+    needs: build-scan-push
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout backend repository
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Checkout GitOps repository
+        uses: actions/checkout@v4
+        with:
+          repository: MedInvo/gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+          ref: main
+          path: _gitops
+
+      - name: Install yq
+        run: |
+          set -euo pipefail
+          wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Update backend image tags — DEV
+        env:
+          IMAGE_TAG: ${{ needs.build-scan-push.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          test -n "$IMAGE_TAG"
+
+          VALUES="_gitops/charts/pharma-app/values-dev.yaml"
+          test -f "$VALUES"
+
+          yq -i \
+            ".productService.image.tag = \"${IMAGE_TAG}\"" \
+            "$VALUES"
+
+          yq -i \
+            ".orderService.image.tag = \"${IMAGE_TAG}\"" \
+            "$VALUES"
+
+          echo "Updated backend image tags:"
+          yq '.productService.image, .orderService.image' "$VALUES"
+
+      - name: Commit and push GitOps changes
+        env:
+          IMAGE_TAG: ${{ needs.build-scan-push.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          cd _gitops
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add charts/pharma-app/values-dev.yaml
+
+          if git diff --cached --quiet; then
+            echo "GitOps image tags are already up to date."
+            exit 0
+          fi
+
+          git commit -m "ci(dev): update backend images to ${IMAGE_TAG}"
+          git push origin main
