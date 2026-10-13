@@ -407,10 +407,10 @@ jobs:
           cd gitops
 
           yq -i '.productService.image.tag = strenv(IMAGE_TAG)' \
-            charts/pharma-app/values-dev.yaml
+            charts/pharma-product-service/values-dev.yaml
 
           yq -i '.orderService.image.tag = strenv(IMAGE_TAG)' \
-            charts/pharma-app/values-dev.yaml
+            charts/pharma-order-service/values-dev.yaml
 
       - name: Commit and push GitOps changes
         run: |
@@ -423,6 +423,6 @@ jobs:
             exit 0
           fi
 
-          git add charts/pharma-app/values-dev.yaml
+          git add charts/pharma-product-service/values-dev.yaml charts/pharma-order-service/values-dev.yaml
           git commit -m "chore(dev): update backend images to ${{ needs.build-scan-push.outputs.image_tag }}"
           git push origin main
