@@ -50,7 +50,7 @@ How it fits together:
 - Both services expose a `/health` endpoint for quick health checks.
 
 ## Architecture (diagram)
-A simple diagram showing runtime interaction.
+Below are two representations of the architecture. GitHub's Mermaid rendering can be inconsistent depending on repository settings — the SVG below always renders.
 
 Mermaid (if your GitHub rendering supports Mermaid):
 
@@ -62,6 +62,10 @@ flowchart LR
   OrderSvc --> DatabaseOrder[(Order DB)]
   OrderSvc -->|PUT /products/{id}| ProductSvc
 ```
+
+PNG/SVG diagram (guaranteed to render in GitHub README):
+
+![Architecture diagram](docs/architecture.svg)
 
 ASCII diagram (works everywhere):
 
