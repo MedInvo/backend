@@ -50,7 +50,6 @@ How it fits together:
 - Both services expose a `/health` endpoint for quick health checks.
 
 ## Architecture (diagram)
-
 ```mermaid
 flowchart LR
     Client -->|create order| OrderSvc
