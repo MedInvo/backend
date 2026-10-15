@@ -50,22 +50,18 @@ How it fits together:
 - Both services expose a `/health` endpoint for quick health checks.
 
 ## Architecture (diagram)
-Below are two representations of the architecture. GitHub's Mermaid rendering can be inconsistent depending on repository settings — the SVG below always renders.
-
-Mermaid (if your GitHub rendering supports Mermaid):
 
 ```mermaid
 flowchart LR
-  Client -->|create order| OrderSvc[Order Service (port 8000)]
-  OrderSvc -->|GET /products/{id}| ProductSvc[Product Service (port 8001)]
-  ProductSvc --> DatabaseProd[(Product DB)]
-  OrderSvc --> DatabaseOrder[(Order DB)]
-  OrderSvc -->|PUT /products/{id}| ProductSvc
+    Client -->|create order| OrderSvc
+    OrderSvc -->|GET /products/{id}| ProductSvc
+    ProductSvc --> ProductDB[(Product DB)]
+    OrderSvc --> OrderDB[(Order DB)]
+    OrderSvc -->|PUT /products/{id}| ProductSvc
+
+    OrderSvc["Order Service\nport 8000"]
+    ProductSvc["Product Service\nport 8001"]
 ```
-
-PNG/SVG diagram (guaranteed to render in GitHub README):
-
-![Architecture diagram](docs/architecture.svg)
 
 ASCII diagram (works everywhere):
 
