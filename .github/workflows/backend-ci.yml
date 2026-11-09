@@ -309,7 +309,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.source.outputs.sha }}
         run: |
-          docker build \
+          docker build --pull \
             -t "product-service:$IMAGE_TAG" \
             ./product-service
 
@@ -317,7 +317,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.source.outputs.sha }}
         run: |
-          docker build \
+          docker build --pull \
             -t "order-service:$IMAGE_TAG" \
             ./order-service
 
