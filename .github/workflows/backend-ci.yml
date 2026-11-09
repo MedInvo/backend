@@ -215,6 +215,13 @@ jobs:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
 
+    # SonarQube Cloud Free supports analysis only for the main branch and
+    # pull requests targeting it.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.ref == 'main')
+
     needs:
       - product-service-tests
       - order-service-tests
@@ -267,10 +274,14 @@ jobs:
 
     # Publish only development pushes or manual dispatches.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      always() &&
+      needs.product-service-tests.result == 'success' &&
+      needs.order-service-tests.result == 'success' &&
+      needs.dependency-audit.result == 'success' &&
+      (needs.sonarcloud-analysis.result == 'success' || needs.sonarcloud-analysis.result == 'skipped') &&
       (
-        github.event_name == 'push' &&
-        github.ref == 'refs/heads/develop'
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/develop')
       )
 
     environment: dev
