@@ -5,10 +5,6 @@ on:
     branches:
       - main
       - develop
-      - "feature/**"
-      - "test/**"
-      - "bugfix/**"
-      - "release/**"
     paths:
       - "product-service/**"
       - "order-service/**"
@@ -19,8 +15,6 @@ on:
   pull_request:
     branches:
       - main
-      - develop
-      - "release/**"
     paths:
       - "product-service/**"
       - "order-service/**"
@@ -31,10 +25,12 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Branch to build and publish"
+        description: "Branch to build and publish (main only)"
         required: true
-        default: develop
-        type: string
+        default: main
+        type: choice
+        options:
+          - main
 
 permissions:
   contents: read
@@ -215,6 +211,13 @@ jobs:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
 
+    # SonarQube Cloud Free supports analysis only for the main branch and
+    # pull requests targeting it.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.ref == 'main')
+
     needs:
       - product-service-tests
       - order-service-tests
@@ -265,12 +268,16 @@ jobs:
       - dependency-audit
       - sonarcloud-analysis
 
-    # Publish only development pushes or manual dispatches.
+    # Publish only after the main-branch quality gate passes.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      always() &&
+      needs.product-service-tests.result == 'success' &&
+      needs.order-service-tests.result == 'success' &&
+      needs.dependency-audit.result == 'success' &&
+      needs.sonarcloud-analysis.result == 'success' &&
       (
-        github.event_name == 'push' &&
-        github.ref == 'refs/heads/develop'
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
       )
 
     environment: dev
@@ -383,7 +390,7 @@ jobs:
   # --------------------------------------------------
   deploy-dev:
     name: "JOB 6: UPDATE GITOPS — DEV"
-    if: github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/main'
     needs: build-scan-push
     runs-on: ubuntu-latest
 
